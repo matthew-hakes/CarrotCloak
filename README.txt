@@ -19,21 +19,20 @@ items can't get stuck on or off.
 INSTALL
 -------
 
-1. On the GitHub page click the green "Code" button, then "Download ZIP".
-2. Unzip it.
-3. Copy the SurfNTurf-main folder (the one with SurfNTurf.lua directly inside
-   it) into your AddOns folder:
+1. Download SurfNTurf.zip:
+
+    https://github.com/matthew-hakes/SurfNTurf/releases/latest/download/SurfNTurf.zip
+
+   (The green "Code" button, then "Download ZIP", works too.)
+2. Unzip it. Inside you will find this README and a folder named SurfNTurf.
+3. Drag the SurfNTurf folder into your AddOns folder:
 
        World of Warcraft\_forever_\Interface\AddOns
 
-   You do not need to rename it. The addon loads from a folder named either
-   SurfNTurf-main or SurfNTurf. Only keep one of them, not both.
+   Do not rename it, and leave this README out. If you have an older copy
+   named SurfNTurf-main in AddOns, delete it first.
 4. Restart the game (or log out to character select) and make sure SurfNTurf
    is ticked in the AddOns list.
-
-There is also a ready-made SurfNTurf.zip (folder already named SurfNTurf) here:
-
-    https://github.com/matthew-hakes/SurfNTurf/releases/latest/download/SurfNTurf.zip
 
 
 USING IT

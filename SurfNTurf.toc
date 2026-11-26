@@ -1,8 +1,0 @@
-## Interface: 16001
-## Title: SurfNTurf
-## Notes: Auto-equips riding gear while mounted and swim gear while swimming, then puts your normal gear back.
-## Author: Matthew Hakes
-## Version: 1.2.1
-## SavedVariablesPerCharacter: SurfNTurfDB
-
-SurfNTurf.lua
