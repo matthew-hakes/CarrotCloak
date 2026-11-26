@@ -12,11 +12,16 @@ It re-checks a few times a second, so items can't get stuck on or off.
 
 ## Install
 
-Copy this folder into your AddOns folder and name it `CarrotCloak`:
+1. Download **[CarrotCloak.zip](https://github.com/matthew-hakes/CarrotCloak/releases/latest/download/CarrotCloak.zip)**
+   (always the latest version).
+2. Unzip it into your AddOns folder. The zip already contains a folder with the right name, so you end up with:
 
 ```
 World of Warcraft\_forever_\Interface\AddOns\CarrotCloak
 ```
+
+Don't use GitHub's green "Code > Download ZIP" button: that one names the folder `CarrotCloak-main`,
+which the game won't load. If you did use it, copy the `CarrotCloak` folder from inside it instead.
 
 Restart the game (or log out to character select) and make sure CarrotCloak is ticked in the AddOns list.
 
