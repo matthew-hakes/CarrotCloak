@@ -2,7 +2,7 @@
 ## Title: CarrotCloak
 ## Notes: Auto-equips riding gear while mounted and swim gear while swimming, then puts your normal gear back.
 ## Author: Matthew Hakes
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariablesPerCharacter: CarrotCloakDB
 
 CarrotCloak.lua

@@ -15,20 +15,13 @@ local RETRY = 1.0                -- seconds to wait before retrying a slot
 local ON_DELAY = 0.2             -- state must hold this long before gear goes on
 local OFF_DELAY = { mount = 0.3, swim = 1.5 } -- ...and this long before it comes off
 
-local DEFAULTS = {
-    enabled = true,
-    trinketSlot = 14,            -- 13 = top trinket, 14 = bottom trinket
-    sets = {
-        mount = { [14] = "Carrot on a Stick" },
-        swim = { [15] = "Cloak of Hermitic Bliss" },
-    },
-    saved = {},                  -- [slot] = link of the normal item we replaced
-}
+local DEFAULT_MOUNT_ITEM = "Carrot on a Stick"        -- trinket
+local DEFAULT_SWIM_ITEM = "Cloak of Hermitic Bliss"   -- back
 
 local SLOT_NAMES = {
     [1] = "Head", [2] = "Neck", [3] = "Shoulder", [4] = "Shirt", [5] = "Chest",
     [6] = "Waist", [7] = "Legs", [8] = "Feet", [9] = "Wrist", [10] = "Hands",
-    [11] = "Ring 1", [13] = "Trinket 1", [14] = "Trinket 2", [15] = "Back",
+    [11] = "Ring 1", [13] = "Top trinket", [14] = "Bottom trinket", [15] = "Back",
     [19] = "Tabard",
 }
 
@@ -39,6 +32,11 @@ local EQUIPLOC_TO_SLOT = {
     INVTYPE_CHEST = 5, INVTYPE_ROBE = 5, INVTYPE_WAIST = 6, INVTYPE_LEGS = 7,
     INVTYPE_FEET = 8, INVTYPE_WRIST = 9, INVTYPE_HAND = 10, INVTYPE_FINGER = 11,
     INVTYPE_CLOAK = 15, INVTYPE_TABARD = 19,
+}
+
+local SECTIONS = {
+    { key = "mount", title = "While mounted", word = "mounted" },
+    { key = "swim", title = "While swimming", word = "swimming" },
 }
 
 -- API differences between client versions --------------------------------------
@@ -54,14 +52,18 @@ local ChannelInfo = UnitChannelInfo or ChannelInfo
 local LAST_BAG = NUM_BAG_SLOTS or 4
 
 local db
+local ui                                        -- the settings window (built on first open)
+local minimapButton
 local raw = { mount = false, swim = false }     -- what the game says right now
 local stable = { mount = false, swim = false }  -- what we act on (debounced)
 local since = { mount = 0, swim = 0 }
 local nextTry = {}
 local lastBagWarning = 0
 
-local function Print(msg)
+-- Shows a message in chat and at the bottom of the settings window.
+local function Notify(msg)
     DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. msg)
+    if ui then ui.status:SetText(msg) end
 end
 
 local function NameFromLink(link)
@@ -99,7 +101,7 @@ local function PutInBags(slot, now)
     if not bag then
         if now - lastBagWarning > 30 then
             lastBagWarning = now
-            Print("bags are full, so I can't take off " .. (EquippedName(slot) or "that item") .. " yet.")
+            Notify("Your bags are full, so I can't take off " .. (EquippedName(slot) or "that item") .. " yet.")
         end
         return false
     end
@@ -192,18 +194,298 @@ local function Evaluate(now)
     end
 end
 
--- Setup and events ---------------------------------------------------------------
+-- Changing the item lists ----------------------------------------------------------
+local function AddItem(section, link)
+    local name, _, _, _, _, _, _, _, equipLoc = GetItemInfo(link)
+    if not name then
+        Notify("I couldn't read that item. Try picking it up again.")
+        return
+    end
+    -- Links carry the full name (e.g. "of the Whale"), which is what we match on.
+    name = NameFromLink(link) or name
+    local slot = equipLoc == "INVTYPE_TRINKET" and db.trinketSlot or EQUIPLOC_TO_SLOT[equipLoc]
+    if not slot then
+        Notify(name .. " can't be used: weapons, off-hands and non-gear items are not supported.")
+        return
+    end
+    local set = db.sets[section.key]
+    local old = set[slot]
+    if old and old ~= name and EquippedName(slot) == old then
+        Notify("You're wearing " .. old .. " right now. Take it off first, then replace it.")
+        return
+    end
+    set[slot] = name
+    if old and old ~= name then
+        Notify(("%s replaces %s as your %s item (%s)."):format(name, old, section.word, SLOT_NAMES[slot]))
+    else
+        Notify(("%s will be equipped while %s (%s)."):format(name, section.word, SLOT_NAMES[slot]))
+    end
+end
+
+local function RemoveItem(section, slot)
+    local set = db.sets[section.key]
+    local name = set[slot]
+    if not name then return end
+    if EquippedName(slot) == name then
+        Notify("You're wearing " .. name .. " right now. Dismount or leave the water first, then remove it.")
+        return
+    end
+    set[slot] = nil
+    Notify("Removed " .. name .. ".")
+end
+
+local function SetTrinketSlot(new)
+    local old = db.trinketSlot
+    if new == old then return end
+    for _, set in pairs(db.sets) do
+        -- db.saved[old] means a swap is in progress or active in that slot.
+        if db.saved[old] or (set[old] and EquippedName(old) == set[old]) then
+            Notify("Dismount or leave the water first, then change the trinket slot.")
+            return
+        end
+    end
+    for _, set in pairs(db.sets) do
+        set[new], set[old] = set[old], nil
+    end
+    db.saved[old], db.saved[new] = nil, nil
+    db.trinketSlot = new
+    Notify("Riding and swimming trinkets now use the " .. SLOT_NAMES[new]:lower() .. " slot.")
+end
+
+-- Settings window --------------------------------------------------------------------
+local WIDTH, PAD = 340, 18
+local INNER = WIDTH - PAD * 2
+local Refresh
+
+local function Place(region, y)
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", ui, "TOPLEFT", PAD, y)
+end
+
+local function CreateRow(section)
+    local row = CreateFrame("Frame", nil, ui)
+    row:SetSize(INNER, 20)
+    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    row.text:SetPoint("LEFT", 4, 0)
+    row.text:SetWidth(INNER - 74)
+    row.text:SetJustifyH("LEFT")
+    local remove = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    remove:SetSize(66, 20)
+    remove:SetPoint("RIGHT", 0, 0)
+    remove:SetText("Remove")
+    remove:SetScript("OnClick", function()
+        RemoveItem(section, row.slot)
+        Refresh()
+    end)
+    return row
+end
+
+Refresh = function()
+    if not ui or not db then return end
+    ui.enabled:SetChecked(db.enabled)
+    ui.minimap:SetChecked(db.minimap)
+    ui.trinket:SetText("Trinket slot: " .. (db.trinketSlot == 13 and "top" or "bottom") .. " (click to change)")
+
+    local y = -104
+    for _, section in ipairs(SECTIONS) do
+        local widgets = ui.sections[section.key]
+        Place(widgets.header, y)
+        y = y - 18
+        Place(widgets.drop, y)
+        y = y - 30
+
+        local slots = {}
+        for slot in pairs(db.sets[section.key]) do slots[#slots + 1] = slot end
+        table.sort(slots)
+        for i, slot in ipairs(slots) do
+            local row = widgets.rows[i]
+            if not row then
+                row = CreateRow(section)
+                widgets.rows[i] = row
+            end
+            row.slot = slot
+            row.text:SetText(db.sets[section.key][slot] .. "  |cff999999" .. (SLOT_NAMES[slot] or "") .. "|r")
+            Place(row, y)
+            row:Show()
+            y = y - 22
+        end
+        for i = #slots + 1, #widgets.rows do
+            widgets.rows[i]:Hide()
+        end
+        y = y - 10
+    end
+
+    Place(ui.status, y)
+    ui:SetHeight(-y + 52)
+end
+
+local function OnDropItem(section)
+    local kind, _, link = GetCursorInfo()
+    if kind ~= "item" or not link then
+        Notify("Pick up an item from your bags first, then click this box.")
+        return
+    end
+    ClearCursor()
+    AddItem(section, link)
+    Refresh()
+end
+
+local function CreateCheck(label, x, y, onChange)
+    local check = CreateFrame("CheckButton", nil, ui, "UICheckButtonTemplate")
+    check:SetSize(24, 24)
+    check:SetPoint("TOPLEFT", ui, "TOPLEFT", x, y)
+    local text = ui:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    text:SetPoint("LEFT", check, "RIGHT", 2, 0)
+    text:SetText(label)
+    check:SetScript("OnClick", function(self)
+        onChange(self:GetChecked() and true or false)
+    end)
+    return check
+end
+
+local UpdateMinimapButton
+
+local function BuildUI()
+    ui = CreateFrame("Frame", "CarrotCloakFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    ui:Hide()
+    ui:SetSize(WIDTH, 300)
+    ui:SetPoint("CENTER")
+    ui:SetFrameStrata("DIALOG")
+    ui:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+    ui:EnableMouse(true)
+    ui:SetMovable(true)
+    ui:SetClampedToScreen(true)
+    ui:RegisterForDrag("LeftButton")
+    ui:SetScript("OnDragStart", ui.StartMoving)
+    ui:SetScript("OnDragStop", ui.StopMovingOrSizing)
+    tinsert(UISpecialFrames, "CarrotCloakFrame") -- Escape closes the window
+
+    local title = ui:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -18)
+    title:SetText("CarrotCloak")
+
+    local close = CreateFrame("Button", nil, ui, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -6, -6)
+
+    ui.enabled = CreateCheck("Enabled", PAD, -42, function(on)
+        db.enabled = on
+        Notify(on and "Turned on." or "Turned off. I won't touch your gear until you turn me back on.")
+    end)
+    ui.minimap = CreateCheck("Minimap button", 170, -42, function(on)
+        db.minimap = on
+        UpdateMinimapButton()
+        if not on then Notify("Minimap button hidden. Type /cc to open this window.") end
+    end)
+
+    ui.trinket = CreateFrame("Button", nil, ui, "UIPanelButtonTemplate")
+    ui.trinket:SetSize(INNER, 22)
+    ui.trinket:SetPoint("TOPLEFT", ui, "TOPLEFT", PAD, -72)
+    ui.trinket:SetScript("OnClick", function()
+        SetTrinketSlot(db.trinketSlot == 14 and 13 or 14)
+        Refresh()
+    end)
+
+    ui.sections = {}
+    for _, section in ipairs(SECTIONS) do
+        local header = ui:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        header:SetText(section.title)
+        local drop = CreateFrame("Button", nil, ui, "UIPanelButtonTemplate")
+        drop:SetSize(INNER, 26)
+        drop:SetText("Drop an item here to add it")
+        drop:SetScript("OnClick", function() OnDropItem(section) end)
+        drop:SetScript("OnReceiveDrag", function() OnDropItem(section) end)
+        ui.sections[section.key] = { header = header, drop = drop, rows = {} }
+    end
+
+    ui.status = ui:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    ui.status:SetWidth(INNER)
+    ui.status:SetJustifyH("LEFT")
+    ui.status:SetText("Pick up an item from your bags and click a box to add it.")
+
+    ui:SetScript("OnShow", Refresh)
+end
+
+local function ToggleUI()
+    if not db then return end
+    if not ui then BuildUI() end
+    if ui:IsShown() then ui:Hide() else ui:Show() end
+end
+
+-- Minimap button ---------------------------------------------------------------------
+local function PlaceMinimapButton()
+    local angle = math.rad(db.minimapAngle or 215)
+    minimapButton:ClearAllPoints()
+    minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * 80, math.sin(angle) * 80)
+end
+
+UpdateMinimapButton = function()
+    if not Minimap then return end
+    if not db.minimap then
+        if minimapButton then minimapButton:Hide() end
+        return
+    end
+    if not minimapButton then
+        local b = CreateFrame("Button", "CarrotCloakMinimapButton", Minimap)
+        minimapButton = b
+        b:SetSize(31, 31)
+        b:SetFrameStrata("MEDIUM")
+        b:SetFrameLevel(8)
+        b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+        local icon = b:CreateTexture(nil, "BACKGROUND")
+        icon:SetSize(20, 20)
+        icon:SetPoint("CENTER", 0, 1)
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Food_54")
+        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local border = b:CreateTexture(nil, "OVERLAY")
+        border:SetSize(53, 53)
+        border:SetPoint("TOPLEFT", 0, 0)
+        border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+        b:SetScript("OnClick", ToggleUI)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            GameTooltip:SetText("CarrotCloak")
+            GameTooltip:AddLine("Click to open. Drag to move.", 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        b:RegisterForDrag("LeftButton")
+        b:SetScript("OnDragStart", function(self)
+            self:SetScript("OnUpdate", function()
+                local mx, my = Minimap:GetCenter()
+                local cx, cy = GetCursorPosition()
+                local scale = Minimap:GetEffectiveScale()
+                db.minimapAngle = math.deg(math.atan2(cy / scale - my, cx / scale - mx))
+                PlaceMinimapButton()
+            end)
+        end)
+        b:SetScript("OnDragStop", function(self)
+            self:SetScript("OnUpdate", nil)
+        end)
+    end
+    PlaceMinimapButton()
+    minimapButton:Show()
+end
+
+-- Setup and events -------------------------------------------------------------------
 local function InitDB()
     CarrotCloakDB = CarrotCloakDB or {}
     db = CarrotCloakDB
-    if db.enabled == nil then db.enabled = DEFAULTS.enabled end
-    if db.trinketSlot ~= 13 and db.trinketSlot ~= 14 then db.trinketSlot = DEFAULTS.trinketSlot end
+    if db.enabled == nil then db.enabled = true end
+    if db.minimap == nil then db.minimap = true end
+    if db.trinketSlot ~= 13 and db.trinketSlot ~= 14 then db.trinketSlot = 14 end
     if type(db.saved) ~= "table" then db.saved = {} end
     -- The default items are only filled in on first run, so removed items stay removed.
     if type(db.sets) ~= "table" then
         db.sets = {
-            mount = { [14] = DEFAULTS.sets.mount[14] },
-            swim = { [15] = DEFAULTS.sets.swim[15] },
+            mount = { [14] = DEFAULT_MOUNT_ITEM },
+            swim = { [15] = DEFAULT_SWIM_ITEM },
         }
     end
     if type(db.sets.mount) ~= "table" then db.sets.mount = {} end
@@ -217,6 +499,7 @@ frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         InitDB()
+        UpdateMinimapButton()
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Combat just ended: fix anything that had to wait, right away.
         for slot in pairs(nextTry) do nextTry[slot] = nil end
@@ -235,119 +518,7 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     Evaluate(now)
 end)
 
--- Slash commands -----------------------------------------------------------------
-local function ListSets()
-    Print(db.enabled and "ON" or "OFF (type /cc on to turn it back on)")
-    for _, key in ipairs({ "mount", "swim" }) do
-        local label = key == "mount" and "While mounted" or "While swimming"
-        local any = false
-        for slot, name in pairs(db.sets[key]) do
-            any = true
-            Print(("  %s: %s (%s)"):format(label, name, SLOT_NAMES[slot] or ("slot " .. slot)))
-        end
-        if not any then Print("  " .. label .. ": nothing") end
-    end
-end
-
-local function AddItem(key, text)
-    if text == "" then
-        Print("shift-click the item after the command, e.g. /cc " .. key .. " [Item Name]")
-        return
-    end
-    local name, _, _, _, _, _, _, _, equipLoc = GetItemInfo(text)
-    if not name then
-        Print("I don't recognise that item. Shift-click it from your bags into the chat box instead of typing the name.")
-        return
-    end
-    local slot = equipLoc == "INVTYPE_TRINKET" and db.trinketSlot or EQUIPLOC_TO_SLOT[equipLoc]
-    if not slot then
-        Print(name .. " can't be used: weapons, off-hands and non-gear items are not supported.")
-        return
-    end
-    -- Links carry the full name (e.g. "of the Whale"), which is what we match on.
-    name = NameFromLink(text) or name
-    local old = db.sets[key][slot]
-    if old and old ~= name and EquippedName(slot) == old then
-        Print("take off " .. old .. " first (dismount or leave the water), then replace it.")
-        return
-    end
-    db.sets[key][slot] = name
-    local label = key == "mount" and "mounted" or "swimming"
-    if old and old ~= name then
-        Print(("%s replaces %s as your %s %s item."):format(name, old, label, SLOT_NAMES[slot]))
-    else
-        Print(("%s will be equipped while %s (%s)."):format(name, label, SLOT_NAMES[slot]))
-    end
-end
-
-local function RemoveItem(text)
-    local target = (NameFromLink(text) or text):lower()
-    local found = false
-    for _, set in pairs(db.sets) do
-        for slot, name in pairs(set) do
-            if name:lower() == target then
-                if EquippedName(slot) == name then
-                    Print("take off " .. name .. " first (dismount or leave the water), then remove it.")
-                    return
-                end
-                set[slot] = nil
-                found = true
-            end
-        end
-    end
-    Print(found and ("removed " .. target .. ".") or ("couldn't find \"" .. text .. "\" in either list. Type /cc to see them."))
-end
-
-local function SetTrinketSlot(text)
-    local new = tonumber(text)
-    if new == 1 then new = 13 elseif new == 2 then new = 14 end
-    if new ~= 13 and new ~= 14 then
-        Print("use /cc trinket 1 (top trinket) or /cc trinket 2 (bottom trinket).")
-        return
-    end
-    local old = db.trinketSlot
-    if new == old then
-        Print("already using " .. SLOT_NAMES[new] .. ".")
-        return
-    end
-    for _, set in pairs(db.sets) do
-        if set[old] and EquippedName(old) == set[old] then
-            Print("dismount or leave the water first, then change the trinket slot.")
-            return
-        end
-    end
-    for _, set in pairs(db.sets) do
-        set[new], set[old] = set[old], nil
-    end
-    db.saved[old], db.saved[new] = nil, nil
-    db.trinketSlot = new
-    Print("riding and swimming trinkets now use " .. SLOT_NAMES[new] .. ".")
-end
-
+-- The only command: open or close the settings window.
 SLASH_CARROTCLOAK1 = "/carrotcloak"
 SLASH_CARROTCLOAK2 = "/cc"
-SlashCmdList["CARROTCLOAK"] = function(msg)
-    if not db then return end
-    local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
-    cmd = cmd:lower()
-    if cmd == "on" or cmd == "off" then
-        db.enabled = (cmd == "on")
-        Print(db.enabled and "ON." or "OFF. I won't touch your gear until you type /cc on.")
-    elseif cmd == "mount" or cmd == "swim" then
-        AddItem(cmd, rest)
-    elseif cmd == "remove" then
-        RemoveItem(rest)
-    elseif cmd == "trinket" then
-        SetTrinketSlot(rest)
-    elseif cmd == "" or cmd == "list" or cmd == "status" then
-        ListSets()
-    else
-        Print("commands:")
-        Print("  /cc - show what is set up")
-        Print("  /cc on, /cc off - turn the addon on or off")
-        Print("  /cc mount [item] - equip this item while mounted")
-        Print("  /cc swim [item] - equip this item while swimming")
-        Print("  /cc remove [item] - stop managing this item")
-        Print("  /cc trinket 1 or 2 - which trinket slot to use (1 = top, 2 = bottom)")
-    end
-end
+SlashCmdList["CARROTCLOAK"] = ToggleUI

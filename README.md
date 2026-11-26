@@ -20,28 +20,18 @@ World of Warcraft\_forever_\Interface\AddOns\CarrotCloak
 
 Restart the game (or log out to character select) and make sure CarrotCloak is ticked in the AddOns list.
 
-## Commands
+## Using it
 
-| Command | What it does |
-| --- | --- |
-| `/cc` | Show what is set up |
-| `/cc on` / `/cc off` | Turn the addon on or off |
-| `/cc mount [item]` | Equip this item while mounted (shift-click the item to link it) |
-| `/cc swim [item]` | Equip this item while swimming |
-| `/cc remove [item]` | Stop managing an item |
-| `/cc trinket 1` / `/cc trinket 2` | Which trinket slot to use (1 = top, 2 = bottom) |
+Click the carrot button on the minimap to open the settings window. (Typing `/cc` or
+`/carrotcloak` opens it too.) Everything is done in that window:
 
-`/carrotcloak` works too if another addon already uses `/cc`.
+- **Enabled:** turn the addon on or off.
+- **Minimap button:** show or hide the carrot button.
+- **Trinket slot:** click to switch between the top and bottom trinket slot.
+- **While mounted / While swimming:** pick up an item from your bags and click the box to add it.
+  Click **Remove** next to an item to stop managing it.
 
-### Adding more items
-
-Anything wearable works, for example boots with Mithril Spurs or gloves with a riding enchant:
-
-```
-/cc mount [Your Spurred Boots]
-/cc swim [Azure Silk Belt]
-```
-
+Anything wearable works, for example boots with Mithril Spurs or gloves with a riding enchant.
 One item per slot per list. Weapons and off-hands are not supported.
 
 ## Notes
