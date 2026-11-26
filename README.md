@@ -1,5 +1,9 @@
 # SurfNTurf
 
+### [Download SurfNTurf.zip](https://github.com/matthew-hakes/SurfNTurf/releases/latest/download/SurfNTurf.zip)
+
+Unzip it straight into your AddOns folder. No renaming needed.
+
 A small World of Warcraft addon that swaps travel gear for you.
 
 - **Mounted:** equips your riding items (default: Carrot on a Stick in the bottom trinket slot).
