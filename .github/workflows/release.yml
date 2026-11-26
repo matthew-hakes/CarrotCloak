@@ -15,7 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build zip
-        run: zip -r SurfNTurf.zip SurfNTurf
+        run: |
+          mkdir SurfNTurf
+          cp SurfNTurf.lua SurfNTurf.toc README.txt SurfNTurf/
+          zip -r SurfNTurf.zip SurfNTurf
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
