@@ -1,8 +1,8 @@
 ## Interface: 16001
-## Title: CarrotCloak
+## Title: SurfNTurf
 ## Notes: Auto-equips riding gear while mounted and swim gear while swimming, then puts your normal gear back.
 ## Author: Matthew Hakes
-## Version: 1.1.0
-## SavedVariablesPerCharacter: CarrotCloakDB
+## Version: 1.2.0
+## SavedVariablesPerCharacter: SurfNTurfDB
 
-CarrotCloak.lua
+SurfNTurf.lua

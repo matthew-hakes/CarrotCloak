@@ -1,4 +1,4 @@
--- CarrotCloak
+-- SurfNTurf
 -- Equips "mounted" items while you are mounted and "swimming" items while you
 -- are swimming, and puts your normal gear back afterwards.
 --
@@ -8,7 +8,7 @@
 -- (combat, dead, casting), it simply waits and fixes it the moment it can, so
 -- gear cannot get stuck on or off.
 
-local PREFIX = "|cff33ff99CarrotCloak|r: "
+local PREFIX = "|cff33ff99SurfNTurf|r: "
 local EMPTY = "EMPTY"            -- marker: the slot was empty before we used it
 local TICK = 0.2                 -- seconds between checks
 local RETRY = 1.0                -- seconds to wait before retrying a slot
@@ -346,7 +346,7 @@ end
 local UpdateMinimapButton
 
 local function BuildUI()
-    ui = CreateFrame("Frame", "CarrotCloakFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    ui = CreateFrame("Frame", "SurfNTurfFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
     ui:Hide()
     ui:SetSize(WIDTH, 300)
     ui:SetPoint("CENTER")
@@ -363,11 +363,11 @@ local function BuildUI()
     ui:RegisterForDrag("LeftButton")
     ui:SetScript("OnDragStart", ui.StartMoving)
     ui:SetScript("OnDragStop", ui.StopMovingOrSizing)
-    tinsert(UISpecialFrames, "CarrotCloakFrame") -- Escape closes the window
+    tinsert(UISpecialFrames, "SurfNTurfFrame") -- Escape closes the window
 
     local title = ui:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -18)
-    title:SetText("CarrotCloak")
+    title:SetText("SurfNTurf")
 
     local close = CreateFrame("Button", nil, ui, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -6, -6)
@@ -379,7 +379,7 @@ local function BuildUI()
     ui.minimap = CreateCheck("Minimap button", 170, -42, function(on)
         db.minimap = on
         UpdateMinimapButton()
-        if not on then Notify("Minimap button hidden. Type /cc to open this window.") end
+        if not on then Notify("Minimap button hidden. Type /surf to open this window.") end
     end)
 
     ui.trinket = CreateFrame("Button", nil, ui, "UIPanelButtonTemplate")
@@ -430,7 +430,7 @@ UpdateMinimapButton = function()
         return
     end
     if not minimapButton then
-        local b = CreateFrame("Button", "CarrotCloakMinimapButton", Minimap)
+        local b = CreateFrame("Button", "SurfNTurfMinimapButton", Minimap)
         minimapButton = b
         b:SetSize(31, 31)
         b:SetFrameStrata("MEDIUM")
@@ -449,7 +449,7 @@ UpdateMinimapButton = function()
         b:SetScript("OnClick", ToggleUI)
         b:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-            GameTooltip:SetText("CarrotCloak")
+            GameTooltip:SetText("SurfNTurf")
             GameTooltip:AddLine("Click to open. Drag to move.", 1, 1, 1)
             GameTooltip:Show()
         end)
@@ -475,8 +475,8 @@ end
 
 -- Setup and events -------------------------------------------------------------------
 local function InitDB()
-    CarrotCloakDB = CarrotCloakDB or {}
-    db = CarrotCloakDB
+    SurfNTurfDB = SurfNTurfDB or {}
+    db = SurfNTurfDB
     if db.enabled == nil then db.enabled = true end
     if db.minimap == nil then db.minimap = true end
     if db.trinketSlot ~= 13 and db.trinketSlot ~= 14 then db.trinketSlot = 14 end
@@ -519,6 +519,6 @@ frame:SetScript("OnUpdate", function(_, elapsed)
 end)
 
 -- The only command: open or close the settings window.
-SLASH_CARROTCLOAK1 = "/carrotcloak"
-SLASH_CARROTCLOAK2 = "/cc"
-SlashCmdList["CARROTCLOAK"] = ToggleUI
+SLASH_SURFNTURF1 = "/surfnturf"
+SLASH_SURFNTURF2 = "/surf"
+SlashCmdList["SURFNTURF"] = ToggleUI
