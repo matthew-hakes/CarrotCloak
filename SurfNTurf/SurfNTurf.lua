@@ -43,6 +43,7 @@ local SECTIONS = {
 local Cont = C_Container or {}
 local GetContainerNumSlots = Cont.GetContainerNumSlots or GetContainerNumSlots
 local GetContainerItemLink = Cont.GetContainerItemLink or GetContainerItemLink
+local GetContainerItemID = Cont.GetContainerItemID or GetContainerItemID
 local GetContainerNumFreeSlots = Cont.GetContainerNumFreeSlots or GetContainerNumFreeSlots
 local ContainerIDToInventoryID = Cont.ContainerIDToInventoryID or ContainerIDToInventoryID
 local GetItemInfo = GetItemInfo or (C_Item and C_Item.GetItemInfo)
@@ -67,23 +68,38 @@ local function Notify(msg)
 end
 
 local function NameFromLink(link)
-    return link and link:match("%[(.-)%]")
+    local name = link and link:match("%[(.-)%]")
+    if name ~= "" then return name end
 end
 
+-- Around loading screens, zone changes and lag the game can hold an item without
+-- being able to name it yet. The second result of the two functions below is
+-- false in that case, so callers wait a moment instead of treating the slot as
+-- empty or the item as gone. Acting on that gap is how a saved item used to get
+-- forgotten.
+
+-- Returns: item name (nil if none), and whether that answer can be trusted.
 local function EquippedName(slot)
-    return NameFromLink(GetInventoryItemLink("player", slot))
+    local name = NameFromLink(GetInventoryItemLink("player", slot))
+    if name then return name, true end
+    return nil, not (GetInventoryItemID and GetInventoryItemID("player", slot))
 end
 
+-- Returns: whether the item is in the bags, and whether that answer can be trusted.
 local function InBags(name)
-    if not name then return false end
+    if not name then return false, true end
+    local known = true
     for bag = 0, LAST_BAG do
         for i = 1, (GetContainerNumSlots(bag) or 0) do
-            if NameFromLink(GetContainerItemLink(bag, i)) == name then
-                return true
+            local found = NameFromLink(GetContainerItemLink(bag, i))
+            if found == name then
+                return true, true
+            elseif not found and GetContainerItemID and GetContainerItemID(bag, i) then
+                known = false
             end
         end
     end
-    return false
+    return false, known
 end
 
 local function FreeBag()
@@ -142,7 +158,8 @@ end
 -- Returns true if it used the cursor (only one cursor move per pass is safe).
 local function ProcessSlot(slot, now, cursorUsed)
     local mountItem, swimItem = db.sets.mount[slot], db.sets.swim[slot]
-    local current = EquippedName(slot)
+    local current, currentKnown = EquippedName(slot)
+    if not currentKnown then return false end   -- can't tell what is worn yet: look again next pass
     local currentIsOurs = current ~= nil and (current == mountItem or current == swimItem)
 
     -- Swimming wins if both want the same slot.
@@ -163,8 +180,16 @@ local function ProcessSlot(slot, now, cursorUsed)
         end
     elseif currentIsOurs then
         local saved = db.saved[slot]
-        if saved and saved ~= EMPTY and InBags(NameFromLink(saved)) then
+        local found, known = false, true
+        if saved and saved ~= EMPTY then
+            found, known = InBags(NameFromLink(saved))
+        end
+        if found then
             EquipItemByName(saved, slot)
+            nextTry[slot] = now + RETRY
+        elseif not known then
+            -- The bags are not readable yet. Keep our item on and look again, rather
+            -- than taking it off and losing track of what should go back.
             nextTry[slot] = now + RETRY
         elseif not cursorUsed then
             nextTry[slot] = now + RETRY
