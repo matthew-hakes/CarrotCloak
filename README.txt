@@ -10,7 +10,8 @@ A small World of Warcraft addon that swaps travel gear for you.
   Afterwards:  puts back whatever you were wearing before. If the slot was
                empty, the item goes back to your bags.
 
-The carrot only goes on while you are actually mounted. Gear can't be swapped
+The carrot only goes on while you are actually mounted, and it stays off on
+flight paths, where it would do nothing. Gear can't be swapped
 in combat, so if you get knocked off your mount in a fight the addon waits and
 fixes your gear the moment combat ends. It re-checks a few times a second, so
 items can't get stuck on or off.

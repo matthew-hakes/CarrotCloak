@@ -538,7 +538,9 @@ frame:SetScript("OnUpdate", function(_, elapsed)
     if elapsedTotal < TICK then return end
     elapsedTotal = 0
     local now = GetTime()
-    UpdateState("mount", IsMounted(), now)
+    -- The game counts a flight path as being mounted, but riding gear does nothing
+    -- there, so normal gear stays on for the flight.
+    UpdateState("mount", IsMounted() and not (UnitOnTaxi and UnitOnTaxi("player")), now)
     UpdateState("swim", IsSwimming(), now)
     Evaluate(now)
 end)
